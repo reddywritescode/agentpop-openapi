@@ -25,32 +25,6 @@ paths:
             application/json:
               schema:
                 type: object
-  /v1/control-plane/status:
-    get:
-      operationId: getControlPlaneStatus
-      responses:
-        "200":
-          description: Exposed control-plane topology and state.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ControlPlaneStatus"
-  /v1/data-plane/hosts:
-    get:
-      operationId: listDataPlaneHosts
-      responses:
-        "200":
-          description: Runtime hosts visible to this control plane.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Host"
   /v1/sandboxes:
     get:
       operationId: listSandboxes
@@ -425,11 +399,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Agent"
-  /v1/platform/health:
-    get:
-      operationId: getPlatformHealth
-      responses:
-        "200": { $ref: "#/components/responses/JSONResponse" }
   /v1/catalog:
     get:
       operationId: getCatalog
@@ -688,7 +657,46 @@ paths:
               required: [name, definition]
               properties:
                 name: { type: string, pattern: "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" }
+                displayName: { type: string }
                 description: { type: string }
+                tagline: { type: string }
+                kind: { type: string, enum: [agent, sandbox] }
+                category: { type: string }
+                useCases:
+                  type: array
+                  items: { type: string }
+                generatedBy: { type: string }
+                credentials:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, label, required]
+                    properties:
+                      name: { type: string }
+                      label: { type: string }
+                      provider: { type: string }
+                      required: { type: boolean }
+                      description: { type: string }
+                files:
+                  type: array
+                  description: Portable source bundle persisted by the control plane.
+                  items:
+                    type: object
+                    required: [path, content]
+                    properties:
+                      path: { type: string }
+                      language: { type: string }
+                      content: { type: string }
+                persistenceModes:
+                  type: array
+                  items: { type: string, enum: [persistent, ephemeral] }
+                defaultCommand: { type: string }
+                requiredConnectors:
+                  type: array
+                  items: { type: string }
+                ports:
+                  type: array
+                  items: { type: integer, minimum: 1, maximum: 65535 }
                 definition: { type: string }
       responses:
         "201": { $ref: "#/components/responses/JSONResponse" }
@@ -1314,6 +1322,13 @@ paths:
       description: Compatibility-only local diagnostics; hosted billing does not use customer credits.
       responses:
         "200": { $ref: "#/components/responses/JSONResponse" }
+  /v1/capabilities:
+    get:
+      operationId: getPlatformCapabilities
+      security: []
+      description: Discover deployment mode and optional hosted capabilities such as billing.
+      responses:
+        "200": { $ref: "#/components/responses/JSONResponse" }
   /v1/subscription:
     get:
       operationId: getSubscription
@@ -1323,11 +1338,51 @@ paths:
   /v1/subscription/checkout:
     post:
       operationId: createSubscriptionCheckout
-      description: Return the configured hosted checkout URL.
+      description: Create an authenticated checkout for the fixed AgentPop Pro subscription.
       responses:
         "200": { $ref: "#/components/responses/JSONResponse" }
         "501":
           description: Hosted billing provider is not configured.
+  /v1/subscription/portal:
+    post:
+      operationId: createSubscriptionPortal
+      description: Create a short-lived customer portal session for the signed-in subscriber.
+      responses:
+        "200": { $ref: "#/components/responses/JSONResponse" }
+        "409":
+          description: The signed-in user has no mapped billing customer.
+  /v1/billing/dodo/webhook:
+    post:
+      operationId: receiveDodoBillingWebhook
+      security: []
+      description: Receive and verify Dodo subscription lifecycle events.
+      parameters:
+        - name: webhook-id
+          in: header
+          required: true
+          schema: { type: string }
+        - name: webhook-signature
+          in: header
+          required: true
+          schema: { type: string }
+        - name: webhook-timestamp
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Verified and processed, or a duplicate delivery.
+        "202":
+          description: Verified event was accepted but did not map to a customer.
+        "401":
+          description: Webhook signature verification failed.
   /v1/quotas:
     get:
       operationId: getQuotas
@@ -1346,22 +1401,6 @@ paths:
                 message: { type: string }
       responses:
         "201": { $ref: "#/components/responses/JSONResponse" }
-  /v1/billing/credits:
-    post:
-      operationId: addLocalCredits
-      deprecated: true
-      description: Legacy local simulator only. The hosted product is a fixed subscription and exposes no credits.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount]
-              properties:
-                amount: { type: number, exclusiveMinimum: 0 }
-      responses:
-        "200": { $ref: "#/components/responses/JSONResponse" }
   /v1/project:
     get:
       operationId: getProject
@@ -1842,41 +1881,6 @@ components:
         finishedAt:
           type: string
           format: date-time
-    Host:
-      type: object
-      required: [id, name, region, driver, os, architecture, healthy, kvmAvailable, capacity, updatedAt]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        region:
-          type: string
-        driver:
-          type: string
-        os:
-          type: string
-        architecture:
-          type: string
-        healthy:
-          type: boolean
-        kvmAvailable:
-          type: boolean
-        firecrackerVersion:
-          type: string
-        message:
-          type: string
-        sshCommand:
-          type: string
-        capacity:
-          type: object
-          additionalProperties: true
-        updatedAt:
-          type: string
-          format: date-time
-    ControlPlaneStatus:
-      type: object
-      additionalProperties: true
     Agent:
       type: object
       required: [id, name, status, sandboxId, template, model, secretNames, createdAt, updatedAt]
